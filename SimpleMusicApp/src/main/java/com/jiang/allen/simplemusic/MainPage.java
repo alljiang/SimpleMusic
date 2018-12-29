@@ -4,8 +4,11 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.DownloadManager;
+import android.graphics.drawable.Drawable;
+import android.media.Image;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.support.annotation.RequiresApi;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -15,8 +18,12 @@ import android.webkit.DownloadListener;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.TextView;
 
@@ -26,110 +33,65 @@ import org.w3c.dom.Text;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.MalformedURLException;
 import java.net.URL;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.List;
 
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 
-public class MainPage extends AppCompatActivity {
+public class MainPage extends AppCompatActivity implements AdapterView.OnItemSelectedListener {
 
-    final int NUM_RESULTS = 10;
+    final int NUM_RESULTS = 5;
     final String MUSIC_PATH = "/storage/emulated/0/Music/";
     final int LOCATION_REQUEST_CODE = 2;
 
-    ArrayList<SearchResult> resultsList = new ArrayList<>();
+    ArrayList<SearchResult> resultsList = new ArrayList<>();  // SearchResult: (vidID, title)
 
+    //  UI Objects
     EditText queryField;
     Button searchBtn;
     Button getDownloadBtn;
     WebView webView;
     TextView statusLabel;
     Spinner songSpinner;
+    CheckBox useTopicCheckBox;
+    ImageView previewImage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_page);
 
-//        create GUI objects
+        //  create GUI objects
         queryField = (EditText) findViewById(R.id.queryField);
         searchBtn = (Button) findViewById(R.id.searchBtn);
         getDownloadBtn = (Button) findViewById(R.id.getDownloadBtn);
         webView = (WebView) findViewById(R.id.webView);
         statusLabel = (TextView) findViewById(R.id.statusLabel);
         songSpinner = (Spinner) findViewById(R.id.songSpinner);
+        useTopicCheckBox = (CheckBox) findViewById(R.id.useTopicCheckBox);
+        previewImage = (ImageView) findViewById(R.id.previewImage);
+
+        // Spinner click listener
+        songSpinner.setOnItemSelectedListener(this);
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    public void getMusic(android.view.View view) {
-//        ask for file access permissions
-        askPermission(Manifest.permission.ACCESS_LOCATION_EXTRA_COMMANDS, LOCATION_REQUEST_CODE);
+    //  searches query field text, uses YT API to fill in search result list
+    public void search() throws IOException, JSONException {
+        String topic = "";
+        if(useTopicCheckBox.isChecked()) topic = " topic";
+        String query = queryField.getText().toString() + topic;
+        print(query);
+        if(query.length() == 0) return;
 
-        int currentIndex = songSpinner.
-
-        Thread t = new Thread(new Runnable() {
-            @TargetApi(Build.VERSION_CODES.O)
-            @RequiresApi(api = Build.VERSION_CODES.N)
-            @Override
-            public void run() {
-                try {
-                    search();
-                    setStatus("Getting download link...");
-                    webView.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            String downloadWebsite = "https://youtube2mp3api.com/@api/button/mp3/" + vidIDs[0];
-                            webView.setDownloadListener(new DownloadListener()
-                            {
-                                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength)
-                                {
-                                    //for downloading directly through download manager
-                                    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                                    request.allowScanningByMediaScanner();
-                                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                                    request.setDestinationInExternalPublicDir( MUSIC_PATH, firstVideoName + ".mp3");
-                                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                                    dm.enqueue(request);
-                                }
-                            });
-                            webView.getSettings().setJavaScriptEnabled(true);
-                            webView.setWebChromeClient(new WebChromeClient());
-                            webView.setWebViewClient(new WebViewClient() {
-                                public boolean shouldOverrideUrlLoading (WebView view, String url){
-                                    //True if the host application wants to leave the current WebView and handle the url itself, otherwise return false.
-                                    return true;
-                                }
-                            });
-                            webView.loadUrl(downloadWebsite);
-                            setStatus("Downloaded: " + firstVideoName + ".mp3");
-
-                        }
-                    });
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        t.start();
-    }
-
-    public void search() throws IOException, JSONException
-    {
-        String query = queryField.getText().toString();
-
-        query = query.replace(" ", "%20");
+        query = query.replace(" ", "%20");  // replace spaces with %20
+        //  YT API request URL
         String URL = "https://content.googleapis.com/youtube/v3/search?type=video&q="+query+"&maxResults=" + NUM_RESULTS +
                 "&part=snippet&key=AIzaSyA8TkKNVRQeiGBqJQK-zh-kRAGkdFKHTNQ";
 
+        //  read in JSON file
         java.net.URL url = new URL(URL);
         BufferedReader in = new BufferedReader(
                 new InputStreamReader(url.openStream())
@@ -144,31 +106,160 @@ public class MainPage extends AppCompatActivity {
 
         JSONObject JSONObj = new JSONObject(inputAll);
 
-        try {
-            for (int i = 0; i < NUM_RESULTS; i++) {
-                JSONObject JSONObj2 = JSONObj.getJSONArray("items").getJSONObject(i);
-                String videoID = JSONObj2.getJSONObject("id").getString("videoId");
-                String title = JSONObj2.getJSONObject("snippet").getString("title");
-                SearchResult result = new SearchResult(videoID, title);
-                resultsList.add(result);
-            }
-        }
-        catch (Exception e) {
-            e.printStackTrace();
+        resultsList.clear();
+
+        int numResults = JSONObj.getJSONArray("items").length();
+        print(numResults+"");
+        if(numResults == 0) {
             setStatus("No results found!");
+            return;
         }
+
+        for (int i = 0; i < numResults; i++) {
+            JSONObject JSONObj2 = JSONObj.getJSONArray("items").getJSONObject(i);
+            String videoID = JSONObj2.getJSONObject("id").getString("videoId");
+            String title = JSONObj2.getJSONObject("snippet").getString("title");
+            SearchResult result = new SearchResult(videoID, title);
+            resultsList.add(result);
+        }
+    }
+
+    //  adds the titles to the spinner
+    public void updateSpinner() {
+        List<String> titles = new ArrayList<>();
+        for(int i = 0; i < resultsList.size(); i++) {
+            String title = resultsList.get(i).title;
+            titles.add(title);
+        }
+        ArrayAdapter<String> aa = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, titles);
+        aa.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        songSpinner.setAdapter(aa);
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    //  puts the selected video download link in the webview
+    public void downloadSequence() {
+        //  ask for file access permissions
+        askPermission(Manifest.permission.ACCESS_LOCATION_EXTRA_COMMANDS, LOCATION_REQUEST_CODE);
+        askPermission("android.permission.WRITE_EXTERNAL_STORAGE", 200);
+
+        //  prevent crash if download without searching
+        if(resultsList.isEmpty()) return;
+
+        //  get index of spinner and the information
+        final int spinnerIndex = songSpinner.getSelectedItemPosition();
+        final String vidID = resultsList.get(spinnerIndex).vidID;
+        final String title = resultsList.get(spinnerIndex).title;
+
+        try {
+            //  update search results list
+            setStatus("Getting download link...");
+            //  add
+            webView.post(new Runnable() {
+                @Override
+                public void run() {
+                    String downloadWebsite = "https://youtube2mp3api.com/@api/button/mp3/" + vidID;
+                    webView.setDownloadListener(new DownloadListener()
+                    {
+                        public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength)
+                        {
+                            //  for downloading directly through download manager
+                            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                            request.allowScanningByMediaScanner();
+                            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,
+                                    title + ".mp3");
+                            DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                            dm.enqueue(request);
+                        }
+                    });
+                    webView.getSettings().setJavaScriptEnabled(true);
+                    webView.setWebChromeClient(new WebChromeClient());
+                    webView.setWebViewClient(new WebViewClient() {
+                        public boolean shouldOverrideUrlLoading (WebView view, String url){
+                            //True if the host application wants to leave the current WebView and handle the url itself, otherwise return false.
+                            return true;
+                        }
+                    });
+                    webView.loadUrl(downloadWebsite);
+                    setStatus("Got Download: " + title + ".mp3");
+
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void previewThumbnail() {
+        //  prevent crash from empty result list
+        if(resultsList.isEmpty()) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                //  get vidID and url for thumbnail
+                int spinnerIndex = songSpinner.getSelectedItemPosition();
+                String vidID = resultsList.get(spinnerIndex).vidID;
+                String url = "https://img.youtube.com/vi/"+ vidID +"/hqdefault.jpg";
+
+                InputStream is = null;
+                try {
+                    is = (InputStream) new URL(url).getContent();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                final Drawable d = Drawable.createFromStream(is, "thumbnail");
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        previewImage.setImageDrawable(d);
+                    }
+                });
+            }
+        }).start();
     }
 
     public void searchBtn_onClick(View v) {
-
+        setStatus("Searching...");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    search();
+                    //  the spinner needs to run after search() but also on the main or UI thread
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateSpinner();
+                            previewThumbnail();
+                        }
+                    });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     public void getDownloadBtn_onClick(View v) {
+        downloadSequence();
+    }
+
+    public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+        previewThumbnail();
+    }
+
+    @Override
+    public void onNothingSelected(AdapterView<?> parent) {
 
     }
 
     public void setStatus(String s) {
-
+        statusLabel.setText(s);
     }
 
     public void print(String s) {
@@ -177,44 +268,15 @@ public class MainPage extends AppCompatActivity {
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     private void askPermission(String permission, int requestCode) {
-        requestPermissions(new String[]{"android.permission.WRITE_EXTERNAL_STORAGE"}, 200);
+        requestPermissions(new String[]{permission}, requestCode);
     }
 
-    @SuppressLint("TrulyRandom")
-    public static void handleSSLHandshake() {
-        try {
-            TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager() {
-                public X509Certificate[] getAcceptedIssuers() {
-                    return new X509Certificate[0];
-                }
-
-                @Override
-                public void checkClientTrusted(X509Certificate[] certs, String authType) {
-                }
-
-                @Override
-                public void checkServerTrusted(X509Certificate[] certs, String authType) {
-                }
-            }};
-
-            SSLContext sc = SSLContext.getInstance("SSL");
-            sc.init(null, trustAllCerts, new SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-            HttpsURLConnection.setDefaultHostnameVerifier(new HostnameVerifier() {
-                @Override
-                public boolean verify(String arg0, SSLSession arg1) {
-                    return arg1.isValid();
-                }
-            });
-        } catch (Exception ignored) {
-        }
-    }
 }
 
 class SearchResult {
 
-    static String vidID;
-    static String title;
+    String vidID;
+    String title;
 
     public SearchResult(String vidID, String title) {
         this.vidID = vidID;
