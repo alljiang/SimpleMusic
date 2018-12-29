@@ -1,44 +1,32 @@
 package com.jiang.allen.simplemusic;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.DownloadManager;
 import android.graphics.drawable.Drawable;
-import android.media.Image;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
+import android.os.*;
 import android.support.annotation.RequiresApi;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
-import android.webkit.DownloadListener;
-import android.webkit.WebChromeClient;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.Spinner;
-import android.widget.TextView;
+import android.webkit.*;
+import android.widget.*;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.w3c.dom.Text;
+import org.jaudiotagger.audio.exceptions.InvalidAudioFrameException;
+import org.jaudiotagger.audio.exceptions.ReadOnlyFileException;
+import org.jaudiotagger.audio.mp3.MP3File;
+import org.jaudiotagger.tag.FieldKey;
+import org.jaudiotagger.tag.Tag;
+import org.jaudiotagger.tag.TagException;
+import org.jaudiotagger.tag.images.Artwork;
+import org.jaudiotagger.tag.images.StandardArtwork;
+import org.json.*;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.*;
+import java.net.*;
+import java.util.*;
 
 
 public class MainPage extends AppCompatActivity implements AdapterView.OnItemSelectedListener {
@@ -83,7 +71,6 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
         String topic = "";
         if(useTopicCheckBox.isChecked()) topic = " topic";
         String query = queryField.getText().toString() + topic;
-        print(query);
         if(query.length() == 0) return;
 
         query = query.replace(" ", "%20");  // replace spaces with %20
@@ -109,7 +96,6 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
         resultsList.clear();
 
         int numResults = JSONObj.getJSONArray("items").length();
-        print(numResults+"");
         if(numResults == 0) {
             setStatus("No results found!");
             return;
@@ -141,7 +127,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
     public void downloadSequence() {
         //  ask for file access permissions
         askPermission(Manifest.permission.ACCESS_LOCATION_EXTRA_COMMANDS, LOCATION_REQUEST_CODE);
-        askPermission("android.permission.WRITE_EXTERNAL_STORAGE", 200);
+        askPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, 1);
 
         //  prevent crash if download without searching
         if(resultsList.isEmpty()) return;
@@ -151,10 +137,20 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
         final String vidID = resultsList.get(spinnerIndex).vidID;
         final String title = resultsList.get(spinnerIndex).title;
 
+        //  delete the file if it already exists
+        File f1 = new File("//sdcard//Music//" + title + ".mp3");
+        File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
+        if(f1.exists()) {
+            f1.delete();
+        }
+        if(f2.exists()) {
+            f2.delete();
+        }
+
         try {
             //  update search results list
             setStatus("Getting download link...");
-            //  add
+            //  add webview downloader
             webView.post(new Runnable() {
                 @Override
                 public void run() {
@@ -167,7 +163,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
                             request.allowScanningByMediaScanner();
                             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,
+                            request.setDestinationInExternalPublicDir("/Music/",
                                     title + ".mp3");
                             DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                             dm.enqueue(request);
@@ -184,12 +180,92 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                     webView.loadUrl(downloadWebsite);
                     setStatus("Got Download: " + title + ".mp3");
 
+                    //  add a background process to configure metadata whenever clicked
+                    webView.setOnTouchListener(new View.OnTouchListener()
+                    {
+                        public boolean onTouch(View v, MotionEvent event) {
+                            //  if touched
+                            if(event.getAction() == MotionEvent.ACTION_UP) {
+                                //  create background process:
+                                new Thread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            //  wait 5 seconds for download to start
+                                            Thread.sleep(5000);
+
+                                            //  constantly check to see if file is finished
+                                            // downloading every 2 seconds
+                                            File mp3 = new File
+                                                    ("//sdcard//Music//" + title + ".mp3");
+                                            while(!isCompletelyWritten(mp3)) {
+                                                Thread.sleep(200);
+                                            }
+
+                                            File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
+                                            if (f2.exists()) f2.delete();
+
+                                            print("Starting metadata write");
+
+                                            //  write metadata to file
+                                            writeMetadata(mp3.getAbsolutePath());
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                    }
+                                }).start();
+
+                            }
+                            return false;
+                        }
+                    });
                 }
             });
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public void writeMetadata(String path) throws IOException, InvalidAudioFrameException, TagException, ReadOnlyFileException {
+        //  get vidID and url for thumbnail
+        int spinnerIndex = songSpinner.getSelectedItemPosition();
+        String vidTitle = resultsList.get(spinnerIndex).title;
+//        String vidID = resultsList.get(spinnerIndex).vidID;
+//        String thumbnailURL = "https://img.youtube.com/vi/"+ vidID +"/hqdefault.jpg";
+//
+//        InputStream is = null;
+//        try {
+//            is = (InputStream) new URL(thumbnailURL).getContent();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+//        int nRead;
+//        byte[] data = new byte[20000000];
+//        while ((nRead = is.read(data, 0, data.length)) != -1) {
+//            buffer.write(data, 0, nRead);
+//        }
+//
+//        Artwork artwork = new StandardArtwork();
+//        artwork.setBinaryData(buffer.toByteArray());
+//        artwork.setImageFromData();
+//        print(artwork.getImageUrl());
+
+        MP3File mp3 = new MP3File(path);
+
+        //  create tag
+        Tag tag = mp3.getTag();
+        mp3.setTag(tag);
+
+        //  edit metadata
+        tag.setField(FieldKey.TITLE, vidTitle);
+        tag.setField(FieldKey.ALBUM, "");
+//        tag.addField(artwork);
+
+        mp3.save();
+
+        print("MP3: Done writing metadata!");
     }
 
     public void previewThumbnail() {
@@ -258,6 +334,25 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
 
     }
 
+    private boolean isCompletelyWritten(File file) {
+        RandomAccessFile stream = null;
+        try {
+            stream = new RandomAccessFile(file, "rw");
+            return true;
+        } catch (Exception e) {
+            print("Skipping file " + file.getName() + " for this iteration due it's not completely written");
+        } finally {
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException e) {
+                    print("Exception during closing file " + file.getName());
+                }
+            }
+        }
+        return false;
+    }
+
     public void setStatus(String s) {
         statusLabel.setText(s);
     }
@@ -268,7 +363,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     private void askPermission(String permission, int requestCode) {
-        requestPermissions(new String[]{permission}, requestCode);
+        ActivityCompat.requestPermissions(this, new String[]{permission}, requestCode);
     }
 
 }

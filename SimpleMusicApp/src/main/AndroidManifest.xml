@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.jiang.allen.simplemusic">
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name="com.jiang.allen.simplemusic.EnableMultiDex"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
+        tools:node="replace"
         android:allowBackup="true"
         android:icon="@drawable/icon"
         android:label="@string/app_name"

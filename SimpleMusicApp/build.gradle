@@ -6,9 +6,13 @@ android {
         applicationId "com.jiang.allen.simplemusic"
         minSdkVersion 15
         targetSdkVersion 28
-        versionCode 5
-        versionName "1.2"
+        versionCode 6
+        versionName "2"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true
+    }
+    dexOptions {
+        javaMaxHeapSize "4g"
     }
     buildTypes {
         release {
@@ -20,6 +24,7 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    //noinspection GradleCompatible
     implementation 'com.android.support:appcompat-v7:28.0.0-rc01'
     implementation 'com.android.support.constraint:constraint-layout:1.1.2'
     testImplementation 'junit:junit:4.12'
@@ -27,4 +32,7 @@ dependencies {
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
     implementation files('libs/jsoup-1.11.3.jar')
     implementation files('libs/jaudiotagger-2.2.3.jar')
+    compile 'com.android.support:appcompat-v7:+'
+    compile 'com.google.android.gms:play-services:+'
+    compile 'com.android.support:multidex:1.0.1'
 }
