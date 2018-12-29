@@ -1,0 +1,8 @@
+-Add gracenote API and change metadata
+***-Make app into 2 activites, restructure everything to make things easier in the future
+-Make sure app doesn't break when there's no internet
+-Add thumbnail pictures to search
+-Make a easier dropdown type of search
+-Checkbox for adding "topic" to the search
+-Remove the custom album thing and delete album metadata
+**-Add the reload media thing
