@@ -1,7 +1,9 @@
 package com.jiang.allen.simplemusic;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.*;
@@ -126,8 +128,9 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
     //  puts the selected video download link in the webview
     public void downloadSequence() {
         //  ask for file access permissions
-        askPermission(Manifest.permission.ACCESS_LOCATION_EXTRA_COMMANDS, LOCATION_REQUEST_CODE);
-        askPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, 1);
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},0);
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},0);
+
 
         //  prevent crash if download without searching
         if(resultsList.isEmpty()) return;
@@ -163,10 +166,15 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
                             request.allowScanningByMediaScanner();
                             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                            request.setDestinationInExternalPublicDir("/Music/",
+                            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,
                                     title + ".mp3");
                             DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                            dm.enqueue(request);
+                            try {
+                                dm.enqueue(request);
+                            }
+                            catch(Exception e) {
+                                e.printStackTrace();
+                            }
                         }
                     });
                     webView.getSettings().setJavaScriptEnabled(true);
@@ -191,16 +199,18 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                                     @Override
                                     public void run() {
                                         try {
-                                            //  wait 5 seconds for download to start
-                                            Thread.sleep(5000);
+                                            //  wait 20 seconds for download finish
+                                            Thread.sleep(20000);
 
                                             //  constantly check to see if file is finished
                                             // downloading every 2 seconds
                                             File mp3 = new File
                                                     ("//sdcard//Music//" + title + ".mp3");
-                                            while(!isCompletelyWritten(mp3)) {
-                                                Thread.sleep(200);
-                                            }
+//                                            while(!isCompletelyWritten(mp3)) {
+//                                                Thread.sleep(200);
+//                                            }
+
+                                            sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(mp3)));
 
                                             File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
                                             if (f2.exists()) f2.delete();
@@ -208,7 +218,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                                             print("Starting metadata write");
 
                                             //  write metadata to file
-                                            writeMetadata(mp3.getAbsolutePath());
+//                                            writeMetadata("//sdcard//Music//" + title + ".mp3");
                                         } catch (Exception e) {
                                             e.printStackTrace();
                                         }
