@@ -200,21 +200,21 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                                     public void run() {
                                         try {
                                             //  wait 20 seconds for download finish
-                                            Thread.sleep(20000);
+//                                            Thread.sleep(20000);
 
                                             //  constantly check to see if file is finished
                                             // downloading every 2 seconds
                                             File mp3 = new File
-                                                    ("//sdcard//Music//" + title + ".mp3");
+                                                    ("/sdcard/Music/" + title + ".mp3");
 //                                            while(!isCompletelyWritten(mp3)) {
 //                                                Thread.sleep(200);
 //                                            }
 
                                             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(mp3)));
 
-                                            File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
-                                            if (f2.exists()) f2.delete();
-
+//                                            File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
+//                                            if (f2.exists()) f2.delete();
+//
                                             print("Starting metadata write");
 
                                             //  write metadata to file
