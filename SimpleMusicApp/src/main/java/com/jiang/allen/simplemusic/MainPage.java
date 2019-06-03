@@ -1,34 +1,25 @@
 package com.jiang.allen.simplemusic;
 
-import android.Manifest;
-import android.app.AlertDialog;
-import android.app.DownloadManager;
-import android.content.Intent;
+import android.*;
 import android.graphics.drawable.Drawable;
-import android.net.Uri;
 import android.os.*;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
 
-import org.jaudiotagger.audio.exceptions.InvalidAudioFrameException;
-import org.jaudiotagger.audio.exceptions.ReadOnlyFileException;
-import org.jaudiotagger.audio.mp3.MP3File;
-import org.jaudiotagger.tag.FieldKey;
-import org.jaudiotagger.tag.Tag;
-import org.jaudiotagger.tag.TagException;
-import org.jaudiotagger.tag.images.Artwork;
-import org.jaudiotagger.tag.images.StandardArtwork;
+import com.gargoylesoftware.htmlunit.*;
+import com.gargoylesoftware.htmlunit.html.*;
+
 import org.json.*;
 
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import java.util.logging.*;
 
 
 public class MainPage extends AppCompatActivity implements AdapterView.OnItemSelectedListener {
@@ -53,6 +44,8 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_page);
+        StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+        StrictMode.setThreadPolicy(policy);
 
         //  create GUI objects
         queryField = (EditText) findViewById(R.id.queryField);
@@ -126,10 +119,11 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     //  puts the selected video download link in the webview
-    public void downloadSequence() {
+    public void downloadSequence() throws IOException, InterruptedException {
         //  ask for file access permissions
-        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},0);
-        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},0);
+
+        ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},0);
+        ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE},0);
 
 
         //  prevent crash if download without searching
@@ -140,142 +134,106 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
         final String vidID = resultsList.get(spinnerIndex).vidID;
         final String title = resultsList.get(spinnerIndex).title;
 
-        //  delete the file if it already exists
-        File f1 = new File("//sdcard//Music//" + title + ".mp3");
-        File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
-        if(f1.exists()) {
-            f1.delete();
-        }
-        if(f2.exists()) {
-            f2.delete();
-        }
+        setStatus("Starting Connection...");
 
-        try {
-            //  update search results list
-            setStatus("Getting download link...");
-            //  add webview downloader
-            webView.post(new Runnable() {
-                @Override
-                public void run() {
-                    String downloadWebsite = "https://youtube2mp3api.com/@api/button/mp3/" + vidID;
-                    webView.setDownloadListener(new DownloadListener()
+        Thread t = new Thread() {
+            public void run() {
+                try {
+                    try (final WebClient webClient = new WebClient(BrowserVersion.CHROME))
                     {
-                        public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength)
-                        {
-                            //  for downloading directly through download manager
-                            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                            request.allowScanningByMediaScanner();
-                            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC,
-                                    title + ".mp3");
-                            DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                            try {
-                                dm.enqueue(request);
-                            }
-                            catch(Exception e) {
-                                e.printStackTrace();
-                            }
+                        webClient.getOptions().setThrowExceptionOnScriptError(false);
+                        java.util.logging.Logger.getLogger("com.gargoylesoftware.htmlunit").setLevel(Level.OFF);
+                        java.util.logging.Logger.getLogger("org.apache.commons.httpclient").setLevel(Level.OFF);
+
+                        // Get the first page
+                        final HtmlPage page1 = webClient.getPage("https://www.bigconverter.com/");
+
+                        final HtmlForm form = page1.getFormByName("");
+
+                        final HtmlButton button = form.getButtonByName("submitForm");
+                        final HtmlTextInput textField = form.getInputByName("videoURL");
+
+                        textField.type("https://www.youtube.com/watch?v=" + vidID);
+
+//            // Now submit the form by clicking the button and get back the second page.
+                        HtmlPage page2 = button.click();
+
+                        int fails = 0;
+                        while(page2.getByXPath("//div[@id='conversionSuccess']").size() == 0) {
+                            page2 = button.click();
+                            fails++;
+                            if(fails == 5) setStatus("Connection failed");
                         }
-                    });
-                    webView.getSettings().setJavaScriptEnabled(true);
-                    webView.setWebChromeClient(new WebChromeClient());
-                    webView.setWebViewClient(new WebViewClient() {
-                        public boolean shouldOverrideUrlLoading (WebView view, String url){
-                            //True if the host application wants to leave the current WebView and handle the url itself, otherwise return false.
-                            return true;
-                        }
-                    });
-                    webView.loadUrl(downloadWebsite);
-                    setStatus("Got Download: " + title + ".mp3");
 
-                    //  add a background process to configure metadata whenever clicked
-                    webView.setOnTouchListener(new View.OnTouchListener()
-                    {
-                        public boolean onTouch(View v, MotionEvent event) {
-                            //  if touched
-                            if(event.getAction() == MotionEvent.ACTION_UP) {
-                                //  create background process:
-                                new Thread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        try {
-                                            //  wait 20 seconds for download finish
-//                                            Thread.sleep(20000);
-
-                                            //  constantly check to see if file is finished
-                                            // downloading every 2 seconds
-                                            File mp3 = new File
-                                                    ("/sdcard/Music/" + title + ".mp3");
-//                                            while(!isCompletelyWritten(mp3)) {
-//                                                Thread.sleep(200);
-//                                            }
-
-                                            sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(mp3)));
-
-//                                            File f2 = new File("//sdcard//Downloads//" + title + ".mp3");
-//                                            if (f2.exists()) f2.delete();
-//
-                                            print("Starting metadata write");
-
-                                            //  write metadata to file
-//                                            writeMetadata("//sdcard//Music//" + title + ".mp3");
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                    }
-                                }).start();
-
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                setStatus("Converting ...");
                             }
-                            return false;
+                        });
+
+                        while(page2.getByXPath("//a[@class='btn btn-success download-buttons']").size() == 0) {
+                            Thread.sleep(100);
                         }
-                    });
+
+                        HtmlAnchor download = ((HtmlAnchor)page2.getByXPath("//a[@class='btn btn-success download-buttons']").get(0));
+                        String originalURL = download.getHrefAttribute();
+
+                        String urlChanged = originalURL.substring(0, 4) + "s" + originalURL.substring(4);
+
+                        URL url = new URL(urlChanged);
+                        URLConnection con = url.openConnection();
+                        String fieldValue = con.getHeaderField("Content-Disposition");
+                        String filename = fieldValue.substring(fieldValue.indexOf("filename=\"") + 10, fieldValue.length() - 1);
+                        filename = filename.replaceAll("_", " ");
+
+                        final String filenamefinal = filename;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                setStatus("Downloading " + filenamefinal + "...");
+                            }
+                        });
+
+                        saveUrl(url.toString(), "/sdcard/music/"+filename);
+
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                setStatus("Download Complete: " + filenamefinal);
+                            }
+                        });
+                    }
+                } catch(InterruptedException | IOException v) {
+                    System.out.println(v);
                 }
-            });
+            }
+        };
 
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        t.start();
     }
 
-    public void writeMetadata(String path) throws IOException, InvalidAudioFrameException, TagException, ReadOnlyFileException {
-        //  get vidID and url for thumbnail
-        int spinnerIndex = songSpinner.getSelectedItemPosition();
-        String vidTitle = resultsList.get(spinnerIndex).title;
-//        String vidID = resultsList.get(spinnerIndex).vidID;
-//        String thumbnailURL = "https://img.youtube.com/vi/"+ vidID +"/hqdefault.jpg";
-//
-//        InputStream is = null;
-//        try {
-//            is = (InputStream) new URL(thumbnailURL).getContent();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-//        int nRead;
-//        byte[] data = new byte[20000000];
-//        while ((nRead = is.read(data, 0, data.length)) != -1) {
-//            buffer.write(data, 0, nRead);
-//        }
-//
-//        Artwork artwork = new StandardArtwork();
-//        artwork.setBinaryData(buffer.toByteArray());
-//        artwork.setImageFromData();
-//        print(artwork.getImageUrl());
+    public void saveUrl(final String urlString, final String filename)
+            throws MalformedURLException, IOException {
+        BufferedInputStream in = null;
+        FileOutputStream fout = null;
+        try {
+            in = new BufferedInputStream(new URL(urlString).openStream());
+            fout = new FileOutputStream(filename);
 
-        MP3File mp3 = new MP3File(path);
-
-        //  create tag
-        Tag tag = mp3.getTag();
-        mp3.setTag(tag);
-
-        //  edit metadata
-        tag.setField(FieldKey.TITLE, vidTitle);
-        tag.setField(FieldKey.ALBUM, "");
-//        tag.addField(artwork);
-
-        mp3.save();
-
-        print("MP3: Done writing metadata!");
+            final byte data[] = new byte[102400];
+            int count;
+            while ((count = in.read(data, 0, 1024)) != -1) {
+                fout.write(data, 0, count);
+            }
+        } finally {
+            if (in != null) {
+                in.close();
+            }
+            if (fout != null) {
+                fout.close();
+            }
+        }
     }
 
     public void previewThumbnail() {
@@ -323,6 +281,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
                             previewThumbnail();
                         }
                     });
+                    setStatus("");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -331,7 +290,7 @@ public class MainPage extends AppCompatActivity implements AdapterView.OnItemSel
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)
-    public void getDownloadBtn_onClick(View v) {
+    public void getDownloadBtn_onClick(View v) throws IOException, InterruptedException {
         downloadSequence();
     }
 
